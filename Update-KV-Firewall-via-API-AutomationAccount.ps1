@@ -13,7 +13,6 @@ Connect-AzAccount -Identity -AccountId $UAMI
 Write-Output "Setting context to subscription $subID..."
 Set-AzContext -Subscription $subID
 Write-Output "Context set successfully."
-Import-Module Az.network -DisableNameChecking
  
 #Retrieve the list of IPv4 addresses
 Write-Output "Retrieving service tags for region $region..."
