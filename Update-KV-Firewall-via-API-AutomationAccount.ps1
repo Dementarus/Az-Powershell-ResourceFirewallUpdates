@@ -18,7 +18,6 @@ Import-Module Az.network -DisableNameChecking
 #Retrieve the list of IPv4 addresses
 Write-Output "Retrieving service tags for region $region..."
 $serviceTags = Get-AzNetworkServiceTag -Location $region
-$serviceTags
 Write-Output "Service tags retrieved: $($serviceTags.Values.Count)"
 $serviceTagInfoNEU = $serviceTags.Values | Where-Object {$_.Name -eq $serviceTagNEU}
 $serviceTagInfoWEU = $serviceTags.Values | Where-Object {$_.Name -eq $serviceTagWEU}
