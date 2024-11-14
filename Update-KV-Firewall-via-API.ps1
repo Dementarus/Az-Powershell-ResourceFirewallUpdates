@@ -1,4 +1,4 @@
-# Update-EH-Firewall-via-API.ps1
+# Update-KV-Firewall-via-API.ps1
 # Outline varibles
 # Full list of tags can be found using "(Get-AzNetworkServiceTag -Location northeurope).values"
 $serviceTagNEU = "PowerPlatformPlex.northeurope"
@@ -6,14 +6,13 @@ $serviceTagWEU = "PowerPlatformPlex.westeurope"
 $region= "northeurope"
 $subID = 'ENTER SUBSCRIPTION ID HERE'
 $tenantID = 'ENTER TENANT ID HERE'
-$EventHubName = "ENTER EVENT HUB NAMESPACE NAME HERE"
-$ResourceGroupName ="ENTER RESOURCE GROUP NAME HERE"
+$keyVaultName = "ENTER KEY VAULT NAMESPACE NAME HERE"
  
 #Install Required Modules
 Install-Module -Name az -scope CurrentUser
 Import-Module -Name az.accounts -NoClobber
 Import-Module -Name az.network -NoClobber
-Import-Module -Name az.eventhub -NoClobber 
+Import-Module -Name az.keyvault -NoClobber 
  
 #Connnect and Set AzContext
 Update-AzConfig -EnableLoginByWam $false
@@ -33,27 +32,13 @@ $allipAddresses = $ipAddressesNEU + $ipAddressesWEU
 #Create Functions
 function Add-UniqueIpAddress {
     param (
-        [string]$HubName,
-        [string]$ResourceGroup,
+        [string]$vaultName,
         [string]$ipAddress
     )
-    
-    # Retrieve the existing IP rules
-    $networkRuleSet = Get-AzEventHubNetworkRuleSet -ResourceGroupName $ResourceGroup -NamespaceName $HubName
-    $existingRules = $networkRuleSet.IPRule
-
-    # Check if the IP address already exists
-    if ($existingRules.IPMask -notcontains $ipAddress) {
+    $existingRules = (Get-AzKeyVault -VaultName $vaultName).NetworkAcls.IpAddressRanges
+    if ($existingRules -notcontains $ipAddress) {
         Write-Output "Adding IP address $ipAddress"
-        
-        # Create a new IP rule
-        $newRule = New-AzEventHubIPRuleConfig -IpMask $ipAddress -Action Allow
-        
-        # Add the new rule to the existing rules
-        $updatedRules = $existingRules + $newRule
-        
-        # Update the network rule set with the new rule included
-        Set-AzEventHubNetworkRuleSet -ResourceGroupName $ResourceGroup -NamespaceName $HubName -IPRule $updatedRules | Out-Null
+        Add-AzKeyVaultNetworkRule -VaultName $vaultName -IpAddressRange $ipAddress
     } else {
         Write-Output "IP address $ipAddress already exists in the firewall rules."
     }
@@ -61,29 +46,18 @@ function Add-UniqueIpAddress {
  
 function Remove-ObsoleteIpAddress {
     param (
-        [string]$HubName,
-        [string]$ResourceGroup,
+        [string]$vaultName,
         [array]$currentIpAddresses
     )
-    
-    # Retrieve the existing IP rules
-    $networkRuleSet = Get-AzEventHubNetworkRuleSet -ResourceGroupName $ResourceGroup -NamespaceName $HubName
-    $existingRules = $networkRuleSet.IPRule
-
-    # Filter out obsolete IP addresses
-    $updatedRules = $existingRules | Where-Object { $currentIpAddresses -contains $_.IPMask }
-
-    # Update the network rule set with the filtered rules
-    Set-AzEventHubNetworkRuleSet -ResourceGroupName $ResourceGroup -NamespaceName $HubName -IPRule $updatedRules | Out-Null
-
-    # Output the removed IP addresses
+    $existingRules = (Get-AzKeyVault -VaultName $vaultName).NetworkAcls.IpAddressRanges
     foreach ($rule in $existingRules) {
-        if ($currentIpAddresses -notcontains $rule.IPMask) {
-            Write-Output "Removed obsolete IP address $($rule.IPMask) from the firewall rules."
+        if ($currentIpAddresses -notcontains $rule) {
+            Write-Output "Removed obsolete IP address $rule from the firewall rules."
+            Remove-AzKeyVaultNetworkRule -VaultName $vaultName -IpAddressRange $rule
         }
     }
 }
- 
+
 # Check allipaddress variable is not null. 
 if($null -eq $allipAddresses){
     Write-Host "All allipaddresses variable is empty, script is exiting!"
@@ -92,13 +66,14 @@ if($null -eq $allipAddresses){
 else {
     #Update the firewall rules
     foreach ($ip in $allipAddresses){
-        Add-UniqueIpAddress -hubname $EventHubName -ResourceGroup $ResourceGroupName -ipAddress $ip
+        Add-UniqueIpAddress -vaultName $keyVaultName -ipAddress $ip
     }
-
+ 
     # Remove obsolete IP addresses
-    Remove-ObsoleteIpAddress -hubname $EventHubName -ResourceGroup $ResourceGroupName -currentIpAddresses $allIpAddresses
-  
+    Remove-ObsoleteIpAddress -vaultName $keyVaultName -currentIpAddresses $allIpAddresses
+ 
     #Verify the changes have been applied.
-    (Get-AzEventHub -ResourceGroupName $ResourceGroupName -NamespaceName $EventHubName).Name
-    (Get-AzEventHubNetworkRuleSet -ResourceGroupName $ResourceGroupName -NamespaceName $EventHubName).IPRule
-}      
+    (Get-AzKeyVault -VaultName $keyVaultName).VaultName
+    (Get-AzKeyVault -VaultName $keyVaultName).NetworkAcls
+}
+
